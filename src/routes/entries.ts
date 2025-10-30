@@ -7,9 +7,15 @@ import { requireAuth } from "../middleware/auth";
 
 const router = express.Router();
 
+/* -------------------------------------------------------------------------- */
+/* ✅ Ensure uploads folder exists                                            */
+/* -------------------------------------------------------------------------- */
 const uploadDir = path.join(__dirname, "../../uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
+/* -------------------------------------------------------------------------- */
+/* ✅ Multer configuration                                                    */
+/* -------------------------------------------------------------------------- */
 const storage = multer.diskStorage({
   destination: (_, __, cb) => cb(null, uploadDir),
   filename: (_, file, cb) => {
@@ -19,6 +25,9 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+/* -------------------------------------------------------------------------- */
+/* ✅ Helper to safely parse JSON from FormData                               */
+/* -------------------------------------------------------------------------- */
 const parseBody = (req: Request) => {
   if (req.body?.data) {
     try {
@@ -31,27 +40,20 @@ const parseBody = (req: Request) => {
   return req.body;
 };
 
-/* ------------------------------- CREATE ENTRY ----------------------------- */
+/* -------------------------------------------------------------------------- */
+/* ✅ CREATE ENTRY                                                            */
+/* -------------------------------------------------------------------------- */
 router.post("/", requireAuth, upload.single("poster"), async (req: Request, res: Response) => {
-  console.log("🟢 [API] POST /entries triggered");
-  console.log("📦 Raw req.body:", req.body);
-  console.log("📸 Uploaded file:", req.file);
-  console.log("👤 Authenticated user:", (req as any).user);
-
   try {
     const user = (req as any).user;
     if (!user?.id) {
-      console.error("❌ User missing from request");
       return res.status(400).json({ message: "User not found in request" });
     }
 
     const entryData = parseBody(req);
-    console.log("📥 Parsed entryData:", entryData);
-
     const { title, type, director, budget, location, durationMin, year, details, description } = entryData;
 
     if (!title || !type) {
-      console.error("❌ Missing required fields", { title, type });
       return res.status(400).json({ message: "Missing required fields: title, type" });
     }
 
@@ -72,22 +74,21 @@ router.post("/", requireAuth, upload.single("poster"), async (req: Request, res:
       },
     });
 
-    console.log("✅ [DB] New entry created:", newEntry);
+    console.log("✅ New entry created:", newEntry.title);
     res.status(201).json(newEntry);
   } catch (error: any) {
-    console.error("❌ [API] Create Entry Error:", error.message);
+    console.error("❌ Create Entry Error:", error.message);
     res.status(500).json({ message: "Server error creating entry", error: error.message });
   }
 });
 
-/* ------------------------------- GET ENTRIES ------------------------------ */
+/* -------------------------------------------------------------------------- */
+/* ✅ GET ENTRIES                                                            */
+/* -------------------------------------------------------------------------- */
 router.get("/", requireAuth, async (req: Request, res: Response) => {
-  console.log("🟢 [API] GET /entries triggered");
-  console.log("👤 Authenticated user:", (req as any).user);
   try {
     const user = (req as any).user;
     if (!user?.id) {
-      console.error("❌ User not found in request");
       return res.status(400).json({ message: "User not found in request" });
     }
 
@@ -96,10 +97,58 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
       orderBy: { createdAt: "desc" },
     });
 
-    console.log("✅ [DB] Entries fetched:", entries.length);
     res.json(entries);
   } catch (error: any) {
-    console.error("❌ [API] Fetch Entries Error:", error.message);
+    console.error("❌ Fetch Entries Error:", error.message);
     res.status(500).json({ message: "Server error fetching entries", error: error.message });
   }
 });
+
+/* -------------------------------------------------------------------------- */
+/* ✅ UPDATE ENTRY                                                            */
+/* -------------------------------------------------------------------------- */
+router.put("/:id", requireAuth, upload.single("poster"), async (req: Request, res: Response) => {
+  try {
+    const entryData = parseBody(req);
+    const { title, type, director, budget, location, durationMin, year, details, description } = entryData;
+
+    const posterPath = req.file ? `/uploads/${req.file.filename}` : undefined;
+
+    const updated = await prisma.entry.update({
+      where: { id: Number(req.params.id) },
+      data: {
+        title,
+        type,
+        director,
+        budget,
+        location,
+        durationMin,
+        year: year ? Number(year) : null,
+        details: details || description || null,
+        ...(posterPath ? { posterPath } : {}),
+      },
+    });
+
+    res.json(updated);
+  } catch (error: any) {
+    console.error("❌ Update Entry Error:", error.message);
+    res.status(500).json({ message: "Server error updating entry", error: error.message });
+  }
+});
+
+/* -------------------------------------------------------------------------- */
+/* ✅ DELETE ENTRY                                                            */
+/* -------------------------------------------------------------------------- */
+router.delete("/:id", requireAuth, async (req: Request, res: Response) => {
+  try {
+    await prisma.entry.delete({
+      where: { id: Number(req.params.id) },
+    });
+    res.json({ message: "Entry deleted successfully" });
+  } catch (error: any) {
+    console.error("❌ Delete Entry Error:", error.message);
+    res.status(500).json({ message: "Server error deleting entry", error: error.message });
+  }
+});
+
+export default router;
