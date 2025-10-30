@@ -5,9 +5,6 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-/* -------------------------------------------------------------------------- */
-/* ✅ Extend Express Request Type to Include `user`                           */
-/* -------------------------------------------------------------------------- */
 declare module "express-serve-static-core" {
   interface Request {
     user?: {
@@ -18,45 +15,47 @@ declare module "express-serve-static-core" {
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/* ✅ Authentication Middleware                                               */
-/* -------------------------------------------------------------------------- */
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   try {
     const header = req.headers.authorization;
+    console.log("🔍 [Auth] Authorization Header:", header);
+
     if (!header) {
+      console.warn("⚠️ Missing Authorization header");
       return res.status(401).json({ message: "Missing Authorization header" });
     }
 
-    // Extract token from "Bearer <token>"
     const token = header.startsWith("Bearer ") ? header.slice(7).trim() : header.trim();
+    console.log("🔍 [Auth] Extracted Token:", token);
 
-    // Verify JWT
     const decoded = jwt.verify(token, process.env.JWT_SECRET || "") as {
       userId: string;
       email: string;
     };
 
+    console.log("🔍 [Auth] Decoded Token Payload:", decoded);
+
     const userId = Number(decoded.userId);
     if (isNaN(userId)) {
+      console.error("❌ [Auth] Invalid userId in token:", decoded.userId);
       return res.status(400).json({ message: "Invalid token payload" });
     }
 
-    // Fetch user from DB
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, name: true, email: true },
     });
 
     if (!user) {
+      console.warn("⚠️ [Auth] User not found for ID:", userId);
       return res.status(401).json({ message: "User not found or invalid token" });
     }
 
-    // Attach user to request
+    console.log("✅ [Auth] Authenticated user:", user);
     req.user = user;
     next();
   } catch (err: any) {
-    console.error("❌ Auth middleware error:", err.message);
+    console.error("❌ [Auth Middleware Error]:", err.message);
     return res.status(401).json({ message: "Unauthorized: Invalid or expired token" });
   }
 }
