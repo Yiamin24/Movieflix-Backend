@@ -20,8 +20,9 @@ const router = express.Router();
 /* -------------------------------------------------------------------------- */
 const generateToken = (user: { id: number; email: string }) => {
   const jwtSecret: Secret = process.env.JWT_SECRET as Secret;
-  const options: SignOptions = { expiresIn: "1h" };
-  return jwt.sign({ userId: String(user.id), email: user.email }, jwtSecret, options);
+  const options: SignOptions = { expiresIn: "7d" }; // longer session life
+  // ✅ FIXED: include `id` not `userId`
+  return jwt.sign({ id: user.id, email: user.email }, jwtSecret, options);
 };
 
 /* -------------------------------------------------------------------------- */
@@ -35,7 +36,6 @@ router.post("/signup", async (req: Request, res: Response) => {
     }
 
     const { name, email, password } = parsed.data;
-
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) return res.status(400).json({ message: "User already exists" });
 
@@ -98,7 +98,13 @@ router.post("/login", async (req: Request, res: Response) => {
     if (!isPasswordValid) return res.status(400).json({ message: "Invalid email or password" });
 
     const token = generateToken(user);
-    res.status(200).json({ message: "✅ Login successful", token, user: { id: user.id, name: user.name, email: user.email } });
+
+    // ✅ Response: consistent with frontend expectations
+    res.status(200).json({
+      message: "✅ Login successful",
+      token,
+      user: { id: user.id, name: user.name, email: user.email },
+    });
   } catch (err) {
     console.error("❌ Login error:", err);
     res.status(500).json({ message: "Server error during login" });
@@ -160,7 +166,7 @@ router.post("/reset-password/:token", async (req: Request, res: Response) => {
 });
 
 /* -------------------------------------------------------------------------- */
-/* PROTECTED ROUTE                                                            */
+/* PROTECTED ROUTE (ME)                                                       */
 /* -------------------------------------------------------------------------- */
 router.get("/me", async (req: Request, res: Response) => {
   try {
@@ -169,11 +175,10 @@ router.get("/me", async (req: Request, res: Response) => {
 
     const token = authHeader.split(" ")[1];
     const jwtSecret: Secret = process.env.JWT_SECRET as Secret;
-    const decoded = jwt.verify(token, jwtSecret) as { userId: string };
-    const userId = Number(decoded.userId);
+    const decoded = jwt.verify(token, jwtSecret) as { id: number; email: string };
 
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: decoded.id },
       select: { id: true, name: true, email: true },
     });
 
