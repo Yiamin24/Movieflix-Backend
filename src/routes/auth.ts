@@ -8,7 +8,7 @@ import {
   sendVerificationEmail,
   sendWelcomeEmail,
   sendAdminNotification,
-} from "../utils/email";
+} from "../utils/email"; // ✅ Using Brevo-based email functions
 import { signupSchema, loginSchema } from "../validation/authSchemas";
 
 dotenv.config();
@@ -60,13 +60,15 @@ router.post("/signup", async (req: Request, res: Response) => {
       },
     });
 
+    // ✅ Send verification email via Brevo
     await sendVerificationEmail(email, verificationToken);
 
     res.status(201).json({
-      message: "Signup successful. Please verify your email.",
+      message:
+        "Signup successful! Please check your email to verify your account.",
     });
   } catch (err) {
-    console.error("Signup error:", err);
+    console.error("❌ Signup error:", err);
     res.status(500).json({ message: "Server error during signup" });
   }
 });
@@ -94,12 +96,15 @@ router.get("/verify/:token", async (req: Request, res: Response) => {
       },
     });
 
+    // ✅ Send welcome email & admin notification via Brevo
     await sendWelcomeEmail(user.email);
     await sendAdminNotification(user.name ?? "User", user.email ?? "");
 
-    res.status(200).json({ message: "Email verified successfully." });
+    res.status(200).json({
+      message: "✅ Email verified successfully. You can now log in.",
+    });
   } catch (err) {
-    console.error("Verification error:", err);
+    console.error("❌ Verification error:", err);
     res.status(500).json({ message: "Server error during email verification" });
   }
 });
@@ -135,7 +140,7 @@ router.post("/login", async (req: Request, res: Response) => {
     const token = generateToken(user);
 
     res.status(200).json({
-      message: "Login successful",
+      message: "✅ Login successful",
       token,
       user: {
         id: user.id,
@@ -144,7 +149,7 @@ router.post("/login", async (req: Request, res: Response) => {
       },
     });
   } catch (err) {
-    console.error("Login error:", err);
+    console.error("❌ Login error:", err);
     res.status(500).json({ message: "Server error during login" });
   }
 });
@@ -155,7 +160,8 @@ router.post("/login", async (req: Request, res: Response) => {
 router.get("/me", async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ message: "No token provided" });
+    if (!authHeader)
+      return res.status(401).json({ message: "No token provided" });
 
     const token = authHeader.split(" ")[1];
     const jwtSecret: Secret = process.env.JWT_SECRET as Secret;
@@ -172,7 +178,7 @@ router.get("/me", async (req: Request, res: Response) => {
 
     res.json(user);
   } catch (err) {
-    console.error("Protected route error:", err);
+    console.error("❌ Protected route error:", err);
     res.status(401).json({ message: "Invalid or expired token" });
   }
 });
