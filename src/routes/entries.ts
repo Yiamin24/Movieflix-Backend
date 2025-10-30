@@ -7,11 +7,15 @@ import { requireAuth } from "../middleware/auth";
 
 const router = express.Router();
 
-// ✅ Ensure uploads folder exists
+/* -------------------------------------------------------------------------- */
+/* ✅ Ensure uploads folder exists                                            */
+/* -------------------------------------------------------------------------- */
 const uploadDir = path.join(__dirname, "../../uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
-// ✅ Multer config
+/* -------------------------------------------------------------------------- */
+/* ✅ Multer configuration                                                    */
+/* -------------------------------------------------------------------------- */
 const storage = multer.diskStorage({
   destination: (_, __, cb) => cb(null, uploadDir),
   filename: (_, file, cb) => {
@@ -21,16 +25,33 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// ✅ CREATE ENTRY
+/* -------------------------------------------------------------------------- */
+/* ✅ Helper to safely parse JSON from FormData                               */
+/* -------------------------------------------------------------------------- */
+const parseBody = (req: Request) => {
+  if (req.body?.data) {
+    try {
+      return JSON.parse(req.body.data);
+    } catch (err) {
+      console.warn("⚠️ Failed to parse JSON body:", err);
+      return {};
+    }
+  }
+  return req.body;
+};
+
+/* -------------------------------------------------------------------------- */
+/* ✅ CREATE ENTRY                                                            */
+/* -------------------------------------------------------------------------- */
 router.post("/", requireAuth, upload.single("poster"), async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
     if (!user?.id) {
-      console.log("❌ Missing user in request");
       return res.status(400).json({ message: "User not found in request" });
     }
 
-    const { title, description = "", type, releaseDate } = req.body;
+    const entryData = parseBody(req);
+    const { title, type, director, budget, location, durationMin, year, details, description } = entryData;
 
     if (!title || !type) {
       return res.status(400).json({ message: "Missing required fields: title, type" });
@@ -38,14 +59,18 @@ router.post("/", requireAuth, upload.single("poster"), async (req: Request, res:
 
     const posterPath = req.file ? `/uploads/${req.file.filename}` : null;
 
-    const newEntry = await prisma.mediaEntry.create({
+    const newEntry = await prisma.entry.create({
       data: {
         title,
-        description,
         type,
-        releaseDate: releaseDate ? new Date(releaseDate) : null,
-        poster: posterPath,
-        userId: user.id,
+        director,
+        budget,
+        location,
+        durationMin,
+        year: year ? Number(year) : null,
+        details: details || description || null,
+        posterPath,
+        userId: Number(user.id),
       },
     });
 
@@ -57,7 +82,9 @@ router.post("/", requireAuth, upload.single("poster"), async (req: Request, res:
   }
 });
 
-// ✅ GET ENTRIES
+/* -------------------------------------------------------------------------- */
+/* ✅ GET ENTRIES                                                            */
+/* -------------------------------------------------------------------------- */
 router.get("/", requireAuth, async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
@@ -65,8 +92,8 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
       return res.status(400).json({ message: "User not found in request" });
     }
 
-    const entries = await prisma.mediaEntry.findMany({
-      where: { userId: user.id },
+    const entries = await prisma.entry.findMany({
+      where: { userId: Number(user.id) },
       orderBy: { createdAt: "desc" },
     });
 
@@ -77,20 +104,28 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// ✅ UPDATE ENTRY
+/* -------------------------------------------------------------------------- */
+/* ✅ UPDATE ENTRY                                                            */
+/* -------------------------------------------------------------------------- */
 router.put("/:id", requireAuth, upload.single("poster"), async (req: Request, res: Response) => {
   try {
-    const { title, description, type, releaseDate } = req.body;
+    const entryData = parseBody(req);
+    const { title, type, director, budget, location, durationMin, year, details, description } = entryData;
+
     const posterPath = req.file ? `/uploads/${req.file.filename}` : undefined;
 
-    const updated = await prisma.mediaEntry.update({
-      where: { id: req.params.id },
+    const updated = await prisma.entry.update({
+      where: { id: Number(req.params.id) },
       data: {
         title,
-        description,
         type,
-        releaseDate: releaseDate ? new Date(releaseDate) : null,
-        ...(posterPath ? { poster: posterPath } : {}),
+        director,
+        budget,
+        location,
+        durationMin,
+        year: year ? Number(year) : null,
+        details: details || description || null,
+        ...(posterPath ? { posterPath } : {}),
       },
     });
 
@@ -101,10 +136,14 @@ router.put("/:id", requireAuth, upload.single("poster"), async (req: Request, re
   }
 });
 
-// ✅ DELETE ENTRY
+/* -------------------------------------------------------------------------- */
+/* ✅ DELETE ENTRY                                                            */
+/* -------------------------------------------------------------------------- */
 router.delete("/:id", requireAuth, async (req: Request, res: Response) => {
   try {
-    await prisma.mediaEntry.delete({ where: { id: req.params.id } });
+    await prisma.entry.delete({
+      where: { id: Number(req.params.id) },
+    });
     res.json({ message: "Entry deleted successfully" });
   } catch (error: any) {
     console.error("❌ Delete Entry Error:", error.message);
