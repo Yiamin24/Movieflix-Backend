@@ -8,27 +8,25 @@ import { requireAuth } from "../middleware/auth";
 const router = express.Router();
 
 /* -------------------------------------------------------------------------- */
-/* ✅ Cloudinary Configuration (using CLOUDINARY_URL directly)                */
+/* ✅ Cloudinary Configuration (uses CLOUDINARY_URL from .env automatically)  */
 /* -------------------------------------------------------------------------- */
-cloudinary.config({
-  secure: true, // Uses your CLOUDINARY_URL automatically
-});
+cloudinary.config({ secure: true });
 
 /* -------------------------------------------------------------------------- */
 /* ✅ Multer Storage using Cloudinary                                         */
 /* -------------------------------------------------------------------------- */
 const storage = new CloudinaryStorage({
   cloudinary,
-  params: {
+  params: async (_req, _file) => ({
     folder: "movieflix_uploads",
     allowed_formats: ["jpg", "jpeg", "png", "webp"],
     transformation: [{ quality: "auto", fetch_format: "auto" }],
-  },
+  }),
 });
 const upload = multer({ storage });
 
 /* -------------------------------------------------------------------------- */
-/* ✅ Helper to safely parse JSON from FormData                               */
+/* ✅ Safely parse JSON from FormData                                         */
 /* -------------------------------------------------------------------------- */
 const parseBody = (req: Request) => {
   if (req.body?.data) {
@@ -119,7 +117,7 @@ router.put("/:id", requireAuth, upload.single("poster"), async (req: Request, re
     const posterPath = file?.path;
     const cloudinaryId = file?.filename;
 
-    // Delete old Cloudinary image if a new one is uploaded
+    // Delete old Cloudinary image if new one uploaded
     if (posterPath && existing.cloudinaryId) {
       await cloudinary.uploader.destroy(existing.cloudinaryId);
       console.log("🗑️ Old image deleted:", existing.cloudinaryId);

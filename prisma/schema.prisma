@@ -1,20 +1,12 @@
-// ============================================================
-// ✅ PRISMA SCHEMA (Render + Neon + Cloudinary Compatible)
-// ============================================================
-
 generator client {
   provider      = "prisma-client-js"
-  binaryTargets = ["native", "debian-openssl-3.0.x"] // ensures Render compatibility
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
-
-// ============================================================
-// 🧩 MODELS
-// ============================================================
 
 model User {
   id                Int       @id @default(autoincrement())
@@ -27,40 +19,29 @@ model User {
   role              Role      @default(USER)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
-
-  // 🔑 For password reset
   resetToken        String?
   resetTokenExpiry  DateTime?
 
-  // 🔗 Relations
   entries           Entry[]   @relation("UserEntries")
 }
 
-// ============================================================
-// 🎬 ENTRIES MODEL
-// ============================================================
-
 model Entry {
-  id          Int       @id @default(autoincrement())
-  userId      Int
-  user        User      @relation("UserEntries", fields: [userId], references: [id], onDelete: Cascade)
-
-  title       String
-  type        EntryType
-  director    String?
-  budget      String?
-  location    String?
-  durationMin String?
-  year        Int?
-  details     String?
-  posterPath  String?   // ✅ Cloudinary URL stored here
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id           Int       @id @default(autoincrement())
+  userId       Int
+  user         User      @relation("UserEntries", fields: [userId], references: [id], onDelete: Cascade)
+  title        String
+  type         EntryType
+  director     String?
+  budget       String?
+  location     String?
+  durationMin  String?
+  year         Int?
+  details      String?
+  posterPath   String?
+  cloudinaryId String?   // ✅ Added to track Cloudinary image ID
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 }
-
-// ============================================================
-// ⚙️ ENUMS
-// ============================================================
 
 enum Role {
   USER

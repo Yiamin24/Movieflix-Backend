@@ -11,26 +11,43 @@ const dotenv_1 = __importDefault(require("dotenv"));
 const prismaClient_1 = require("../prismaClient");
 const email_1 = require("../utils/email");
 const authSchemas_1 = require("../validation/authSchemas");
+const zod_1 = require("zod");
 dotenv_1.default.config();
 const router = express_1.default.Router();
 /* -------------------------------------------------------------------------- */
-/* Helper: Generate JWT Token                                                 */
+/* ✅ Additional Validation Schemas                                           */
+/* -------------------------------------------------------------------------- */
+const forgotPasswordSchema = zod_1.z.object({
+    email: zod_1.z.string().email(),
+});
+const verifyOtpSchema = zod_1.z.object({
+    email: zod_1.z.string().email(),
+    otp: zod_1.z.string().length(6),
+});
+const resetPasswordSchema = zod_1.z.object({
+    email: zod_1.z.string().email(),
+    otp: zod_1.z.string().length(6),
+    newPassword: zod_1.z.string().min(6),
+    confirmPassword: zod_1.z.string().min(6),
+});
+/* -------------------------------------------------------------------------- */
+/* ✅ Helper: Generate JWT Token                                              */
 /* -------------------------------------------------------------------------- */
 const generateToken = (user) => {
     const jwtSecret = process.env.JWT_SECRET;
-    const options = { expiresIn: "7d" }; // longer session life
-    // ✅ FIXED: include `id` not `userId`
+    const options = { expiresIn: "7d" };
     return jsonwebtoken_1.default.sign({ id: user.id, email: user.email }, jwtSecret, options);
 };
 /* -------------------------------------------------------------------------- */
-/* SIGNUP ROUTE                                                               */
+/* ✅ SIGNUP ROUTE                                                            */
 /* -------------------------------------------------------------------------- */
 router.post("/signup", async (req, res) => {
     try {
         const parsed = authSchemas_1.signupSchema.safeParse(req.body);
-        if (!parsed.success) {
-            return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
-        }
+        if (!parsed.success)
+            return res
+                .status(400)
+                .json({ message: parsed.error.errors[0]?.message || "Invalid input" });
         const { name, email, password } = parsed.data;
         const existingUser = await prismaClient_1.prisma.user.findUnique({ where: { email } });
         if (existingUser)
@@ -38,10 +55,18 @@ router.post("/signup", async (req, res) => {
         const hashedPassword = await bcryptjs_1.default.hash(password, 10);
         const verificationToken = crypto_1.default.randomBytes(32).toString("hex");
         await prismaClient_1.prisma.user.create({
-            data: { name, email, passwordHash: hashedPassword, verificationToken, isVerified: false },
+            data: {
+                name,
+                email,
+                passwordHash: hashedPassword,
+                verificationToken,
+                isVerified: false,
+            },
         });
         await (0, email_1.sendVerificationEmail)(email, verificationToken);
-        res.status(201).json({ message: "Signup successful! Please check your email to verify your account." });
+        res.status(201).json({
+            message: "Signup successful! Please check your email to verify your account.",
+        });
     }
     catch (err) {
         console.error("❌ Signup error:", err);
@@ -49,12 +74,14 @@ router.post("/signup", async (req, res) => {
     }
 });
 /* -------------------------------------------------------------------------- */
-/* EMAIL VERIFICATION ROUTE                                                   */
+/* ✅ EMAIL VERIFICATION                                                      */
 /* -------------------------------------------------------------------------- */
 router.get("/verify/:token", async (req, res) => {
     try {
         const { token } = req.params;
-        const user = await prismaClient_1.prisma.user.findFirst({ where: { verificationToken: token } });
+        const user = await prismaClient_1.prisma.user.findFirst({
+            where: { verificationToken: token },
+        });
         if (!user)
             return res.status(400).send("Invalid or expired verification link.");
         await prismaClient_1.prisma.user.update({
@@ -71,14 +98,15 @@ router.get("/verify/:token", async (req, res) => {
     }
 });
 /* -------------------------------------------------------------------------- */
-/* LOGIN ROUTE                                                                */
+/* ✅ LOGIN                                                                   */
 /* -------------------------------------------------------------------------- */
 router.post("/login", async (req, res) => {
     try {
         const parsed = authSchemas_1.loginSchema.safeParse(req.body);
-        if (!parsed.success) {
-            return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
-        }
+        if (!parsed.success)
+            return res
+                .status(400)
+                .json({ message: parsed.error.errors[0]?.message || "Invalid input" });
         const { email, password } = parsed.data;
         const user = await prismaClient_1.prisma.user.findUnique({ where: { email } });
         if (!user)
@@ -89,7 +117,6 @@ router.post("/login", async (req, res) => {
         if (!isPasswordValid)
             return res.status(400).json({ message: "Invalid email or password" });
         const token = generateToken(user);
-        // ✅ Response: consistent with frontend expectations
         res.status(200).json({
             message: "✅ Login successful",
             token,
@@ -102,50 +129,93 @@ router.post("/login", async (req, res) => {
     }
 });
 /* -------------------------------------------------------------------------- */
-/* FORGOT PASSWORD                                                            */
+/* ✅ FORGOT PASSWORD (SECURE OTP FLOW)                                       */
 /* -------------------------------------------------------------------------- */
+// Step 1: Send OTP
 router.post("/forgot-password", async (req, res) => {
     try {
-        const { email } = req.body;
-        if (!email)
-            return res.status(400).json({ message: "Email is required" });
+        const parsed = forgotPasswordSchema.safeParse(req.body);
+        if (!parsed.success)
+            return res.status(400).json({ message: "Valid email required" });
+        const { email } = parsed.data;
         const user = await prismaClient_1.prisma.user.findUnique({ where: { email } });
         if (!user)
             return res.status(404).json({ message: "No user found with this email" });
-        const resetToken = crypto_1.default.randomBytes(32).toString("hex");
-        const tokenExpiry = new Date(Date.now() + 3600000); // 1 hour
+        // Cooldown check (optional)
+        if (user.resetTokenExpiry && user.resetTokenExpiry > new Date())
+            return res
+                .status(429)
+                .json({ message: "Please wait before requesting another OTP" });
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const hashedOtp = await bcryptjs_1.default.hash(otp, 10);
+        const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 min
         await prismaClient_1.prisma.user.update({
             where: { id: user.id },
-            data: { resetToken, resetTokenExpiry: tokenExpiry },
+            data: { resetToken: hashedOtp, resetTokenExpiry: otpExpiry },
         });
-        await (0, email_1.sendPasswordResetEmail)(email, resetToken);
-        res.status(200).json({ message: "Password reset link sent to your email." });
+        await (0, email_1.sendPasswordResetEmail)(email, otp);
+        console.log(`🔑 OTP sent to ${email}`);
+        res.status(200).json({ message: "OTP sent to your email." });
     }
     catch (err) {
         console.error("❌ Forgot password error:", err);
-        res.status(500).json({ message: "Error sending password reset email" });
+        res.status(500).json({ message: "Error sending OTP" });
     }
 });
-/* -------------------------------------------------------------------------- */
-/* RESET PASSWORD                                                             */
-/* -------------------------------------------------------------------------- */
-router.post("/reset-password/:token", async (req, res) => {
+// Step 2: Verify OTP
+router.post("/verify-otp", async (req, res) => {
     try {
-        const { token } = req.params;
-        const { newPassword } = req.body;
-        if (!newPassword)
-            return res.status(400).json({ message: "New password is required" });
-        const user = await prismaClient_1.prisma.user.findFirst({
-            where: { resetToken: token, resetTokenExpiry: { gt: new Date() } },
+        const parsed = verifyOtpSchema.safeParse(req.body);
+        if (!parsed.success)
+            return res.status(400).json({ message: "Invalid input" });
+        const { email, otp } = parsed.data;
+        const user = await prismaClient_1.prisma.user.findUnique({ where: { email } });
+        if (!user || !user.resetToken || !user.resetTokenExpiry)
+            return res.status(400).json({ message: "Invalid or expired OTP" });
+        const isOtpValid = await bcryptjs_1.default.compare(otp, user.resetToken);
+        if (!isOtpValid || user.resetTokenExpiry < new Date())
+            return res.status(400).json({ message: "Invalid or expired OTP" });
+        // Clear OTP after verification (optional safety)
+        await prismaClient_1.prisma.user.update({
+            where: { id: user.id },
+            data: { resetToken: null, resetTokenExpiry: null },
         });
-        if (!user)
-            return res.status(400).json({ message: "Invalid or expired reset token" });
+        console.log(`✅ OTP verified for ${email}`);
+        res.status(200).json({ message: "✅ OTP verified successfully." });
+    }
+    catch (err) {
+        console.error("❌ Verify OTP error:", err);
+        res.status(500).json({ message: "Error verifying OTP" });
+    }
+});
+// Step 3: Reset password
+router.post("/reset-password", async (req, res) => {
+    try {
+        const parsed = resetPasswordSchema.safeParse(req.body);
+        if (!parsed.success)
+            return res.status(400).json({ message: "Invalid input" });
+        const { email, otp, newPassword, confirmPassword } = parsed.data;
+        if (newPassword !== confirmPassword)
+            return res.status(400).json({ message: "Passwords do not match" });
+        const user = await prismaClient_1.prisma.user.findUnique({ where: { email } });
+        if (!user || !user.resetToken || !user.resetTokenExpiry)
+            return res.status(400).json({ message: "Invalid or expired OTP" });
+        const isOtpValid = await bcryptjs_1.default.compare(otp, user.resetToken);
+        if (!isOtpValid || user.resetTokenExpiry < new Date())
+            return res.status(400).json({ message: "Invalid or expired OTP" });
         const hashedPassword = await bcryptjs_1.default.hash(newPassword, 10);
         await prismaClient_1.prisma.user.update({
             where: { id: user.id },
-            data: { passwordHash: hashedPassword, resetToken: null, resetTokenExpiry: null },
+            data: {
+                passwordHash: hashedPassword,
+                resetToken: null,
+                resetTokenExpiry: null,
+            },
         });
-        res.status(200).json({ message: "✅ Password reset successful! You can now log in." });
+        console.log(`🔐 Password reset for ${email}`);
+        res
+            .status(200)
+            .json({ message: "✅ Password updated successfully. Redirect to login." });
     }
     catch (err) {
         console.error("❌ Reset password error:", err);
@@ -153,7 +223,7 @@ router.post("/reset-password/:token", async (req, res) => {
     }
 });
 /* -------------------------------------------------------------------------- */
-/* PROTECTED ROUTE (ME)                                                       */
+/* ✅ PROTECTED USER ROUTE                                                    */
 /* -------------------------------------------------------------------------- */
 router.get("/me", async (req, res) => {
     try {
