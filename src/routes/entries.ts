@@ -8,9 +8,9 @@ import { requireAuth } from "../middleware/auth";
 const router = express.Router();
 
 /* -------------------------------------------------------------------------- */
-/* ✅ Ensure uploads folder exists                                            */
+/* ✅ Ensure uploads folder exists (Root level for consistency)               */
 /* -------------------------------------------------------------------------- */
-const uploadDir = path.join(__dirname, "../../uploads");
+const uploadDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 /* -------------------------------------------------------------------------- */
@@ -19,7 +19,7 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const storage = multer.diskStorage({
   destination: (_, __, cb) => cb(null, uploadDir),
   filename: (_, file, cb) => {
-    const unique = Date.now() + "-" + file.originalname.replace(/\s+/g, "_");
+    const unique = `${Date.now()}-${file.originalname.replace(/\s+/g, "_")}`;
     cb(null, unique);
   },
 });
