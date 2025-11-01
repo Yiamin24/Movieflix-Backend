@@ -1,26 +1,28 @@
 import express, { Request, Response } from "express";
 import multer from "multer";
-import fs from "fs";
-import path from "path";
+import { v2 as cloudinary } from "cloudinary";
+import { CloudinaryStorage } from "multer-storage-cloudinary";
 import { prisma } from "../prismaClient";
 import { requireAuth } from "../middleware/auth";
 
 const router = express.Router();
 
 /* -------------------------------------------------------------------------- */
-/* ✅ Ensure uploads folder exists (Root level for consistency)               */
+/* ✅ Cloudinary Configuration (using CLOUDINARY_URL directly)                */
 /* -------------------------------------------------------------------------- */
-const uploadDir = path.join(process.cwd(), "uploads");
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+cloudinary.config({
+  secure: true, // Uses your CLOUDINARY_URL automatically
+});
 
 /* -------------------------------------------------------------------------- */
-/* ✅ Multer configuration                                                    */
+/* ✅ Multer Storage using Cloudinary                                         */
 /* -------------------------------------------------------------------------- */
-const storage = multer.diskStorage({
-  destination: (_, __, cb) => cb(null, uploadDir),
-  filename: (_, file, cb) => {
-    const unique = `${Date.now()}-${file.originalname.replace(/\s+/g, "_")}`;
-    cb(null, unique);
+const storage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: "movieflix_uploads",
+    allowed_formats: ["jpg", "jpeg", "png", "webp"],
+    transformation: [{ quality: "auto", fetch_format: "auto" }],
   },
 });
 const upload = multer({ storage });
@@ -46,18 +48,16 @@ const parseBody = (req: Request) => {
 router.post("/", requireAuth, upload.single("poster"), async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    if (!user?.id) {
-      return res.status(400).json({ message: "User not found in request" });
-    }
+    if (!user?.id) return res.status(400).json({ message: "User not found in request" });
 
     const entryData = parseBody(req);
     const { title, type, director, budget, location, durationMin, year, details, description } = entryData;
 
-    if (!title || !type) {
-      return res.status(400).json({ message: "Missing required fields: title, type" });
-    }
+    if (!title || !type) return res.status(400).json({ message: "Missing required fields: title, type" });
 
-    const posterPath = req.file ? `/uploads/${req.file.filename}` : null;
+    const file = req.file as any;
+    const posterPath = file?.path || null;
+    const cloudinaryId = file?.filename || null;
 
     const newEntry = await prisma.entry.create({
       data: {
@@ -70,6 +70,7 @@ router.post("/", requireAuth, upload.single("poster"), async (req: Request, res:
         year: year ? Number(year) : null,
         details: details || description || null,
         posterPath,
+        cloudinaryId,
         userId: Number(user.id),
       },
     });
@@ -88,9 +89,7 @@ router.post("/", requireAuth, upload.single("poster"), async (req: Request, res:
 router.get("/", requireAuth, async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    if (!user?.id) {
-      return res.status(400).json({ message: "User not found in request" });
-    }
+    if (!user?.id) return res.status(400).json({ message: "User not found in request" });
 
     const entries = await prisma.entry.findMany({
       where: { userId: Number(user.id) },
@@ -105,17 +104,29 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
 });
 
 /* -------------------------------------------------------------------------- */
-/* ✅ UPDATE ENTRY                                                            */
+/* ✅ UPDATE ENTRY (Deletes old Cloudinary image if replaced)                 */
 /* -------------------------------------------------------------------------- */
 router.put("/:id", requireAuth, upload.single("poster"), async (req: Request, res: Response) => {
   try {
+    const entryId = Number(req.params.id);
     const entryData = parseBody(req);
     const { title, type, director, budget, location, durationMin, year, details, description } = entryData;
 
-    const posterPath = req.file ? `/uploads/${req.file.filename}` : undefined;
+    const existing = await prisma.entry.findUnique({ where: { id: entryId } });
+    if (!existing) return res.status(404).json({ message: "Entry not found" });
+
+    const file = req.file as any;
+    const posterPath = file?.path;
+    const cloudinaryId = file?.filename;
+
+    // Delete old Cloudinary image if a new one is uploaded
+    if (posterPath && existing.cloudinaryId) {
+      await cloudinary.uploader.destroy(existing.cloudinaryId);
+      console.log("🗑️ Old image deleted:", existing.cloudinaryId);
+    }
 
     const updated = await prisma.entry.update({
-      where: { id: Number(req.params.id) },
+      where: { id: entryId },
       data: {
         title,
         type,
@@ -125,7 +136,7 @@ router.put("/:id", requireAuth, upload.single("poster"), async (req: Request, re
         durationMin,
         year: year ? Number(year) : null,
         details: details || description || null,
-        ...(posterPath ? { posterPath } : {}),
+        ...(posterPath ? { posterPath, cloudinaryId } : {}),
       },
     });
 
@@ -137,14 +148,22 @@ router.put("/:id", requireAuth, upload.single("poster"), async (req: Request, re
 });
 
 /* -------------------------------------------------------------------------- */
-/* ✅ DELETE ENTRY                                                            */
+/* ✅ DELETE ENTRY (Deletes image from Cloudinary too)                        */
 /* -------------------------------------------------------------------------- */
 router.delete("/:id", requireAuth, async (req: Request, res: Response) => {
   try {
-    await prisma.entry.delete({
-      where: { id: Number(req.params.id) },
-    });
-    res.json({ message: "Entry deleted successfully" });
+    const entryId = Number(req.params.id);
+    const existing = await prisma.entry.findUnique({ where: { id: entryId } });
+
+    if (!existing) return res.status(404).json({ message: "Entry not found" });
+
+    if (existing.cloudinaryId) {
+      await cloudinary.uploader.destroy(existing.cloudinaryId);
+      console.log("🗑️ Deleted Cloudinary image:", existing.cloudinaryId);
+    }
+
+    await prisma.entry.delete({ where: { id: entryId } });
+    res.json({ message: "Entry and associated image deleted successfully" });
   } catch (error: any) {
     console.error("❌ Delete Entry Error:", error.message);
     res.status(500).json({ message: "Server error deleting entry", error: error.message });
