@@ -14,21 +14,27 @@ datasource db {
 
 model User {
   id                Int       @id @default(autoincrement())
-  email             String    @unique
-  passwordHash      String
   name              String?
+  email             String    @unique @db.VarChar(255)
+  passwordHash      String
+
+  // ✅ Email verification
   isVerified        Boolean   @default(false)
   verificationToken String?
   verificationExp   DateTime?
-  role              Role      @default(USER)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
 
-  // ✅ Password reset support
+  // ✅ Password reset
   resetToken        String?
   resetTokenExpiry  DateTime?
 
-  // ✅ Relation
+  // ✅ Role management
+  role              Role      @default(USER)
+
+  // ✅ Timestamps
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // ✅ Relation with entries
   entries           Entry[]   @relation("UserEntries")
 }
 
@@ -40,7 +46,7 @@ model Entry {
   id           Int       @id @default(autoincrement())
   userId       Int
   user         User      @relation("UserEntries", fields: [userId], references: [id], onDelete: Cascade)
-  
+
   title        String
   type         EntryType
   director     String?
@@ -49,8 +55,11 @@ model Entry {
   durationMin  String?
   year         Int?
   details      String?
-  posterPath   String?   // ✅ Cloudinary image URL
-  cloudinaryId String?   // ✅ Cloudinary public ID (used to delete old image)
+
+  // ✅ Cloudinary fields
+  posterPath   String?
+  cloudinaryId String?
+
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 }
