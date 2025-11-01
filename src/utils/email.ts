@@ -50,7 +50,6 @@ async function send(mail: {
 /* ✅ Verification Email                                                      */
 /* -------------------------------------------------------------------------- */
 export async function sendVerificationEmail(toEmail: string, token: string) {
-  // Use backend or frontend URL depending on how you verify
   const baseUrl = process.env.BACKEND_URL || process.env.APP_URL || "http://localhost:4000";
   const verifyUrl = `${baseUrl}/api/auth/verify/${token}`;
 
@@ -113,24 +112,21 @@ export async function sendAdminNotification(userName: string, userEmail: string)
 }
 
 /* -------------------------------------------------------------------------- */
-/* ✅ Forgot Password Email                                                   */
+/* ✅ OTP-Based Forgot Password Email                                         */
 /* -------------------------------------------------------------------------- */
-export async function sendPasswordResetEmail(toEmail: string, token: string) {
-  const baseUrl = process.env.FRONTEND_URL || process.env.BACKEND_URL || "http://localhost:4000";
-  const resetUrl = `${baseUrl}/reset-password/${token}`;
-
+export async function sendPasswordResetEmail(toEmail: string, otp: string) {
   const mail = {
     sender: DEFAULT_SENDER,
     to: [{ email: toEmail }],
-    subject: "Reset your MOVIEFLIX password 🔐",
+    subject: "Your MOVIEFLIX Password Reset OTP 🔐",
     htmlContent: `
-      <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:20px;background:#eef2f7;border-radius:10px;">
-        <h2>Password Reset Request</h2>
-        <p>We received a request to reset your password. Click below to set a new one:</p>
-        <p style="text-align:center;">
-          <a href="${resetUrl}" style="background:#007bff;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;">Reset My Password</a>
-        </p>
-        <p>If you didn’t request this, you can safely ignore this email.</p>
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:25px;background:#eef2f7;border-radius:10px;text-align:center;">
+        <h2 style="color:#e50914;">Password Reset Request</h2>
+        <p style="font-size:16px;">Use the following OTP to reset your password:</p>
+        <div style="font-size:28px;font-weight:bold;letter-spacing:4px;color:#333;margin:20px 0;">${otp}</div>
+        <p>This OTP will expire in <b>10 minutes</b>.</p>
+        <hr style="margin:20px 0;border:none;border-top:1px solid #ccc;"/>
+        <p style="font-size:13px;color:#666;">If you didn’t request this, please ignore this email.</p>
       </div>
     `,
   };

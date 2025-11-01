@@ -1,7 +1,6 @@
 generator client {
   provider      = "prisma-client-js"
-  // ✅ Works seamlessly on both Windows (local) and Render (Linux)
-  binaryTargets = ["native", "debian-openssl-3.0.x"]
+  binaryTargets = ["native", "debian-openssl-3.0.x"] // works for local + Render
 }
 
 datasource db {
@@ -21,15 +20,29 @@ model User {
   isVerified        Boolean   @default(false)
   verificationToken String?
   verificationExp   DateTime?
-  resetToken        String?          // ✅ Added for password reset link
-  resetTokenExpiry  DateTime?        // ✅ Added to store expiry time of reset token
   role              Role      @default(USER)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  // ✅ Relation to Entries
+  // ✅ Relations
   entries           Entry[]   @relation("UserEntries")
+  passwordResetToken PasswordResetToken? // relation for OTP password resets
 }
+
+/* -------------------------------------------------------------------------- */
+/*                               PASSWORD RESET                               */
+/* -------------------------------------------------------------------------- */
+
+model PasswordResetToken {
+  userId    Int      @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String
+  expiresAt DateTime
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                   ENTRIES                                  */
+/* -------------------------------------------------------------------------- */
 
 model Entry {
   id          Int       @id @default(autoincrement())
@@ -41,7 +54,7 @@ model Entry {
   director    String?
   budget      String?
   location    String?
-  durationMin String?   // ✅ Allows flexible formats like "2h 10m"
+  durationMin String?
   year        Int?
   details     String?
   posterPath  String?
