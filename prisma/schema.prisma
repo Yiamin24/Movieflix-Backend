@@ -24,20 +24,12 @@ model User {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
+  // ✅ Added for password reset flow
+  resetToken        String?
+  resetTokenExpiry  DateTime?
+
   // ✅ Relations
   entries           Entry[]   @relation("UserEntries")
-  passwordResetToken PasswordResetToken? // relation for OTP password resets
-}
-
-/* -------------------------------------------------------------------------- */
-/*                               PASSWORD RESET                               */
-/* -------------------------------------------------------------------------- */
-
-model PasswordResetToken {
-  userId    Int      @unique
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  token     String
-  expiresAt DateTime
 }
 
 /* -------------------------------------------------------------------------- */
