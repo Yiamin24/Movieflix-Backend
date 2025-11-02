@@ -39,7 +39,7 @@ const generateToken = (user) => {
     return jsonwebtoken_1.default.sign({ id: user.id, email: user.email }, jwtSecret, options);
 };
 /* -------------------------------------------------------------------------- */
-/* ✅ SIGNUP ROUTE                                                            */
+/* ✅ SIGNUP ROUTE (Email normalized)                                         */
 /* -------------------------------------------------------------------------- */
 router.post("/signup", async (req, res) => {
     try {
@@ -48,7 +48,9 @@ router.post("/signup", async (req, res) => {
             return res
                 .status(400)
                 .json({ message: parsed.error.errors[0]?.message || "Invalid input" });
-        const { name, email, password } = parsed.data;
+        const name = parsed.data.name?.trim();
+        const email = parsed.data.email.toLowerCase().trim();
+        const password = parsed.data.password.trim();
         const existingUser = await prismaClient_1.prisma.user.findUnique({ where: { email } });
         if (existingUser)
             return res.status(400).json({ message: "User already exists" });
@@ -98,7 +100,7 @@ router.get("/verify/:token", async (req, res) => {
     }
 });
 /* -------------------------------------------------------------------------- */
-/* ✅ LOGIN                                                                   */
+/* ✅ LOGIN (Email normalized + proper validation)                            */
 /* -------------------------------------------------------------------------- */
 router.post("/login", async (req, res) => {
     try {
@@ -107,7 +109,8 @@ router.post("/login", async (req, res) => {
             return res
                 .status(400)
                 .json({ message: parsed.error.errors[0]?.message || "Invalid input" });
-        const { email, password } = parsed.data;
+        const email = parsed.data.email.toLowerCase().trim();
+        const password = parsed.data.password.trim();
         const user = await prismaClient_1.prisma.user.findUnique({ where: { email } });
         if (!user)
             return res.status(400).json({ message: "Invalid email or password" });
@@ -137,11 +140,10 @@ router.post("/forgot-password", async (req, res) => {
         const parsed = forgotPasswordSchema.safeParse(req.body);
         if (!parsed.success)
             return res.status(400).json({ message: "Valid email required" });
-        const { email } = parsed.data;
+        const email = parsed.data.email.toLowerCase().trim();
         const user = await prismaClient_1.prisma.user.findUnique({ where: { email } });
         if (!user)
             return res.status(404).json({ message: "No user found with this email" });
-        // Cooldown check (optional)
         if (user.resetTokenExpiry && user.resetTokenExpiry > new Date())
             return res
                 .status(429)
@@ -168,14 +170,14 @@ router.post("/verify-otp", async (req, res) => {
         const parsed = verifyOtpSchema.safeParse(req.body);
         if (!parsed.success)
             return res.status(400).json({ message: "Invalid input" });
-        const { email, otp } = parsed.data;
+        const email = parsed.data.email.toLowerCase().trim();
+        const { otp } = parsed.data;
         const user = await prismaClient_1.prisma.user.findUnique({ where: { email } });
         if (!user || !user.resetToken || !user.resetTokenExpiry)
             return res.status(400).json({ message: "Invalid or expired OTP" });
         const isOtpValid = await bcryptjs_1.default.compare(otp, user.resetToken);
         if (!isOtpValid || user.resetTokenExpiry < new Date())
             return res.status(400).json({ message: "Invalid or expired OTP" });
-        // Clear OTP after verification (optional safety)
         await prismaClient_1.prisma.user.update({
             where: { id: user.id },
             data: { resetToken: null, resetTokenExpiry: null },
@@ -194,7 +196,8 @@ router.post("/reset-password", async (req, res) => {
         const parsed = resetPasswordSchema.safeParse(req.body);
         if (!parsed.success)
             return res.status(400).json({ message: "Invalid input" });
-        const { email, otp, newPassword, confirmPassword } = parsed.data;
+        const email = parsed.data.email.toLowerCase().trim();
+        const { otp, newPassword, confirmPassword } = parsed.data;
         if (newPassword !== confirmPassword)
             return res.status(400).json({ message: "Passwords do not match" });
         const user = await prismaClient_1.prisma.user.findUnique({ where: { email } });

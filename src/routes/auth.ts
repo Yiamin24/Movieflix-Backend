@@ -75,8 +75,12 @@ router.post("/signup", async (req: Request, res: Response) => {
     });
 
     await sendVerificationEmail(email, verificationToken);
+
+    // ✅ Added formClear flag for frontend to reset input fields
     res.status(201).json({
-      message: "Signup successful! Please check your email to verify your account.",
+      message:
+        "Signup successful! Please check your email to verify your account.",
+      formClear: true,
     });
   } catch (err) {
     console.error("❌ Signup error:", err);
@@ -114,7 +118,7 @@ router.get("/verify/:token", async (req: Request, res: Response) => {
 });
 
 /* -------------------------------------------------------------------------- */
-/* ✅ LOGIN (Email normalized + proper validation)                            */
+/* ✅ LOGIN (Added 'Credentials not found' message)                           */
 /* -------------------------------------------------------------------------- */
 router.post("/login", async (req: Request, res: Response) => {
   try {
@@ -129,7 +133,7 @@ router.post("/login", async (req: Request, res: Response) => {
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user)
-      return res.status(400).json({ message: "Invalid email or password" });
+      return res.status(404).json({ message: "Credentials not found" });
 
     if (!user.isVerified)
       return res.status(400).json({ message: "Please verify your email first" });
@@ -151,9 +155,8 @@ router.post("/login", async (req: Request, res: Response) => {
 });
 
 /* -------------------------------------------------------------------------- */
-/* ✅ FORGOT PASSWORD (SECURE OTP FLOW)                                       */
+/* ✅ FORGOT PASSWORD (Added 'Credentials not found' message)                 */
 /* -------------------------------------------------------------------------- */
-// Step 1: Send OTP
 router.post("/forgot-password", async (req: Request, res: Response) => {
   try {
     const parsed = forgotPasswordSchema.safeParse(req.body);
@@ -162,8 +165,9 @@ router.post("/forgot-password", async (req: Request, res: Response) => {
 
     const email = parsed.data.email.toLowerCase().trim();
     const user = await prisma.user.findUnique({ where: { email } });
+
     if (!user)
-      return res.status(404).json({ message: "No user found with this email" });
+      return res.status(404).json({ message: "Credentials not found" });
 
     if (user.resetTokenExpiry && user.resetTokenExpiry > new Date())
       return res
@@ -188,7 +192,9 @@ router.post("/forgot-password", async (req: Request, res: Response) => {
   }
 });
 
-// Step 2: Verify OTP
+/* -------------------------------------------------------------------------- */
+/* ✅ OTP VERIFY + RESET PASSWORD ROUTES (No change needed)                   */
+/* -------------------------------------------------------------------------- */
 router.post("/verify-otp", async (req: Request, res: Response) => {
   try {
     const parsed = verifyOtpSchema.safeParse(req.body);
@@ -218,7 +224,6 @@ router.post("/verify-otp", async (req: Request, res: Response) => {
   }
 });
 
-// Step 3: Reset password
 router.post("/reset-password", async (req: Request, res: Response) => {
   try {
     const parsed = resetPasswordSchema.safeParse(req.body);
